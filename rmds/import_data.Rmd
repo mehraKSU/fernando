@@ -1,0 +1,37 @@
+---
+title: "import_data"
+author: "Lucky Mehra"
+date: "6/14/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = '../.') # sets the root directory to parent directory of the directory 
+																				# where this .rmd file lives in
+```
+
+```{r package-install, eval=FALSE}
+source("src/install_packages.R")
+
+```
+
+Import `SRS 2017 FOR SAS.ods` since this has daily averages of weather data instead of every 30 minutes in `SRS 2017 FOR R.ods`.
+
+```{r}
+necrosis17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods") %>% 
+	
+	gather(key = "Root", value = "necrosis_level", `Root 1`:`Root 30`) %>% 
+	
+	group_by(Facility, Grower, Stack, Harvest, Cut) %>% 
+	
+	summarise(incidence = sum(necrosis_level > 1, na.rm = TRUE) / n())
+	
+weather17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods", sheet = 2) %>% 
+	
+	na.omit() %>% 
+	
+	mutate(Date = lubridate::mdy(Date))
+
+
+```
