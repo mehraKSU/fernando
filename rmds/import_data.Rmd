@@ -36,11 +36,11 @@ weather17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods", sheet = 2) %>%
 ```
 
 ```{r weather-variables}
-weather17_var <- weather %>% 
+weather17_var <- weather (temp_gt_70 = )%>% 
 	
 	group_by(Facility, Grower, Stack, Harvest) %>% 
 	
-	
+	mutate(temp_gt_70 = )
 
 
 ```
