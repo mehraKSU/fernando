@@ -33,5 +33,12 @@ weather17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods", sheet = 2) %>%
 	
 	mutate(Date = lubridate::mdy(Date))
 
+# make new data variables
+
+weather17_vars <- weather17 %>% 
+	
+	group_by(Facility, Grower, Harvest, Stack) %>% 
+	
+	summarise(n = n())
 
 ```
