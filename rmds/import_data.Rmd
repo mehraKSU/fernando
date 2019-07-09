@@ -26,6 +26,18 @@ necrosis17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods")) %>%
 	
 	summarise(incidence = sum(necrosis_level > 1, na.rm = TRUE) / n())
 
+# spread the necrosis data and cacluate average incidence across cuts
+necrosis17_wide <- necrosis17 %>% 
+	
+	spread(key = Cut, value = incidence) %>% 
+	
+	rename(cut1_in = `1`,
+				 cut2_in = `2`,
+				 cut3_in = `3`,
+				 cut4_in = `4`) %>% 
+	
+	mutate(mean_in = mean(cut1_in:cut4_in, na.rm = TRUE))
+
 # import weather data	
 weather17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>% 
 	
@@ -34,6 +46,7 @@ weather17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>%
 	mutate(Date = lubridate::mdy(Date))
 ```
 
+Make new weather variables for different time windows. These time windows are 1 to 7 days after harvest, 1 to 14 days after harvest, 1 to 21 days after harvest, and 1 to 30 days after harvest. Below, I am creating a function that can be easily used to create same weather variables for different window panes (aka time frames after harvesting).  
 
 ```{r weather-variables}
 # make new weather variables
@@ -86,4 +99,14 @@ weather17_vars <- inner_join(weather17_vars_1to7dah, weather17_vars_1to14dah) %>
 	inner_join(weather17_vars_1to21dah) %>% 
 	inner_join(weather17_vars_1to30dah)
 
+```
+
+And, finally join disease incidence data from each facility, grower, and harvest with weather variables to caclulate correlation coefficients.  
+
+```{r join-disease-weather}
+int_nec <- inner_join(necrosis17_wide, 
+											weather17_vars, 
+											by = c("Facility", "Grower", "Harvest"))
+
+saveRDS(int_nec, here("data/tidy", "int_nec.Rds"))
 ```

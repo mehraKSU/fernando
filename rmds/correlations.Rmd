@@ -1,0 +1,16 @@
+---
+title: "Correlations between weather variabless and internal necrosis"
+author: "Lucky Mehra"
+date: "7/9/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r package-install, eval=FALSE}
+source(here::here("src", "install_packages.R"))
+
+```
+
