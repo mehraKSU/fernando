@@ -24,7 +24,9 @@ necrosis17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods")) %>%
 	
 	group_by(Facility, Grower, Stack, Harvest, Cut) %>% 
 	
-	summarise(incidence = sum(necrosis_level > 1, na.rm = TRUE) / n())
+	summarise(incidence = sum(necrosis_level > 1, na.rm = TRUE) / n()) %>% 
+	
+	ungroup()
 
 # spread the necrosis data and cacluate average incidence across cuts
 necrosis17_wide <- necrosis17 %>% 
@@ -36,7 +38,13 @@ necrosis17_wide <- necrosis17 %>%
 				 cut3_in = `3`,
 				 cut4_in = `4`) %>% 
 	
-	mutate(mean_in = mean(cut1_in:cut4_in, na.rm = TRUE))
+	mutate(mean_in = select(., cut1_in:cut4_in) %>% 
+				 	as.matrix() %>% 
+				 	rowMeans(na.rm = TRUE),
+				 
+				 mean_in2to4 = select(., cut2_in:cut4_in) %>% 
+				 	as.matrix() %>% 
+				 	rowMeans(na.rm = TRUE)) 
 
 # import weather data	
 weather17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>% 

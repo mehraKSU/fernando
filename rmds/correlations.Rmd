@@ -14,3 +14,99 @@ source(here::here("src", "install_packages.R"))
 
 ```
 
+Calculate correlation coefficients between cut1 incidence and all weather variables.  
+
+```{r correlation-coeff}
+int_nec <- readRDS(here("data/tidy", "int_nec.Rds"))
+
+# delete unwanted variables
+int_nec <- int_nec %>% 
+	ungroup() %>% 
+	select(-c(Facility:Harvest, cut2_in:cut4_in, starts_with("duration")))
+
+# calculate correlation and p-values
+corr_cut1 <- rcorr(as.matrix(int_nec), type = "pearson")
+
+corr_cut1_r <- as.data.frame(corr_cut1$r) %>% 
+	
+	select(cut1_in, mean_in, mean_in2to4)%>% 
+	
+	rename(cut1_in_r = cut1_in,
+				 mean_in_r = mean_in,
+				 mean_in2to4_r = mean_in2to4) %>% 
+	
+	rownames_to_column(var = "weather_var")
+
+corr_cut1_rP <- as.data.frame(corr_cut1$P) %>%
+	
+	select(cut1_in, mean_in, mean_in2to4)%>% 
+	
+	rename(cut1_in_P = cut1_in,
+				 mean_in_P = mean_in,
+				 mean_in2to4_P = mean_in2to4) %>%  
+	
+	rownames_to_column(var = "weather_var") %>% 
+	
+	inner_join(corr_cut1_r) %>% 
+	
+	filter(!weather_var %in% c("cut1_in", "mean_in", "mean_in2to4"))
+```
+
+### Incidence at cut 1  
+
+Select weather variables where absolute value of correlation coefficient is greater or equal to 0.3 and P-value for the correlation is <= 0.05.
+
+```{r significant-corr-cut1}
+sig_weather_vars_cut1 <- corr_cut1_rP %>% 
+	
+	select(weather_var, cut1_in_P, cut1_in_r) %>% 
+	
+	filter(cut1_in_P <= 0.05 & abs(cut1_in_r) >= 0.2) %>% 
+	
+	arrange(desc(cut1_in_r))
+
+sig_weather_vars_cut1$weather_var -> selected_weather_vars
+
+# correlation matrix of potential predictors
+corr_mat <- as.data.frame(corr_cut1$r) %>% 
+	
+	rownames_to_column(var = "weather_var") %>% 
+	
+	select(weather_var, selected_weather_vars) %>% 
+	
+	filter(weather_var %in% selected_weather_vars)
+
+findCorrelation(corr_mat, cutoff = .6, exact = FALSE)	
+```
+
+It looks like days with temperature above 75 (daysTA75_21) in first 21 days after harvest and minimum temperature average for first 21 days (min_temp_avg_21) are one of the most correlated variables.  
+
+### Mean incidence of 4 cuts  
+
+```{r significant-corr-mean2to4cuts}
+sig_weather_vars_mean4cuts <- corr_cut1_rP %>% 
+	
+	select(weather_var, mean_in_P, mean_in_r) %>% 
+	
+	filter(mean_in_P <= 0.05 & abs(mean_in_r) >= 0.2) %>% 
+
+	arrange(desc(mean_in_r))
+
+sig_weather_vars_mean4cuts
+
+	
+```
+
+### Mean incidence of cut 2 to 4  
+
+```{r significant-corr-mean2to4cuts}
+sig_weather_vars_mean2to4cuts <- corr_cut1_rP %>% 
+	
+	select(weather_var, mean_in2to4_P, mean_in2to4_r) %>% 
+	
+	filter(mean_in2to4_P <= 0.05 & abs(mean_in2to4_r) >= 0.2) %>% 
+	
+	arrange(desc(mean_in2to4_r))
+
+sig_weather_vars_mean2to4cuts
+```
