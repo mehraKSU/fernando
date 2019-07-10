@@ -7,11 +7,10 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_knit$set(root.dir = '../.') # sets the root directory to parent directory of the directory where this .rmd file lives in
 ```
 
 ```{r package-install, eval=FALSE}
-source("src/install_packages.R")
+source(here::here("src", "install_packages.R"))
 
 ```
 
@@ -19,7 +18,7 @@ Import `SRS 2017 FOR SAS.ods` since this has daily averages of weather data inst
 
 ```{r}
 # import necrosis data
-necrosis17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods") %>% 
+necrosis17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods")) %>% 
 	
 	gather(key = "Root", value = "necrosis_level", `Root 1`:`Root 30`) %>% 
 	
@@ -27,20 +26,87 @@ necrosis17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods") %>%
 	
 	summarise(incidence = sum(necrosis_level > 1, na.rm = TRUE) / n())
 
+# spread the necrosis data and cacluate average incidence across cuts
+necrosis17_wide <- necrosis17 %>% 
+	
+	spread(key = Cut, value = incidence) %>% 
+	
+	rename(cut1_in = `1`,
+				 cut2_in = `2`,
+				 cut3_in = `3`,
+				 cut4_in = `4`) %>% 
+	
+	mutate(mean_in = mean(cut1_in:cut4_in, na.rm = TRUE))
+
 # import weather data	
-weather17 <- read_ods("data/raw/SRS 2017 FOR SAS.ods", sheet = 2) %>% 
+weather17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>% 
 	
 	na.omit() %>% 
 	
 	mutate(Date = lubridate::mdy(Date))
 ```
 
+Make new weather variables for different time windows. These time windows are 1 to 7 days after harvest, 1 to 14 days after harvest, 1 to 21 days after harvest, and 1 to 30 days after harvest. Below, I am creating a function that can be easily used to create same weather variables for different window panes (aka time frames after harvesting).  
+
 ```{r weather-variables}
-weather17_var <- weather (temp_gt_70 = )%>% 
+# make new weather variables
+create_weather_vars <- function(days_after_harvest = 7){
+	days_after_harvest <- enquo(days_after_harvest)
 	
-	group_by(Facility, Grower, Stack, Harvest) %>% 
+	weather17 %>% 
+
+	group_by(Facility, Grower, Harvest) %>% 
 	
-	mutate(temp_gt_70 = )
+	filter(Date < Date[1] + !!days_after_harvest) %>% 
+	
+	summarise(!!paste0("duration_", quo_name(days_after_harvest)) := n(),
+						!!paste0("max_temp_avg_", quo_name(days_after_harvest)) := mean(`Max Temp`, na.rm = TRUE),
+						!!paste0("min_temp_avg_", quo_name(days_after_harvest)) := mean(`Min Temp`, na.rm = TRUE),
+						!!paste0("avg_temp_", quo_name(days_after_harvest)) := mean(`Avg Temp`, na.rm = TRUE),
+						!!paste0("diff_max_avg_", quo_name(days_after_harvest)) := max(`Max Temp`) - mean(`Avg Temp`, na.rm = TRUE),
+						!!paste0("max_RH_avg_", quo_name(days_after_harvest)) := mean(`Max RH`, na.rm = TRUE),
+						!!paste0("min_RH_avg_", quo_name(days_after_harvest)) := mean(`Min RH`, na.rm = TRUE),
+						!!paste0("avg_RH_", quo_name(days_after_harvest)) := mean(`Avg RH`, na.rm = TRUE),
+						
+						!!paste0("daysTA60_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 60), # TA = Temperature Above
+						!!paste0("daysTA65_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 65),
+						!!paste0("daysTA70_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 70),
+						!!paste0("daysTA75_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 75),
+						!!paste0("daysTA80_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 80),
+						!!paste0("daysTA85_", quo_name(days_after_harvest)) := sum(`Min Temp` >= 85),
+						
+						!!paste0("daysTB60_", quo_name(days_after_harvest)) := sum(`Max Temp` < 60), # TB = Temperature Below
+						
+						!!paste0("daysRHB60_", quo_name(days_after_harvest)) := sum(`Max RH` < 60), # RHB = Relative Humidity Below
+						!!paste0("daysRHB65_", quo_name(days_after_harvest)) := sum(`Max RH` < 65),
+						!!paste0("daysRHB70_", quo_name(days_after_harvest)) := sum(`Max RH` < 70),
+						!!paste0("daysRHB75_", quo_name(days_after_harvest)) := sum(`Max RH` < 75),
+						!!paste0("daysRHB80_", quo_name(days_after_harvest)) := sum(`Max RH` < 80),
+						!!paste0("daysRHB85_", quo_name(days_after_harvest)) := sum(`Max RH` < 85),
+						!!paste0("daysRHB90_", quo_name(days_after_harvest)) := sum(`Max RH` < 90),
+						!!paste0("daysRHB95_", quo_name(days_after_harvest)) := sum(`Max RH` < 95)
+						)
+}
 
+weather17_vars_1to7dah <- create_weather_vars(days_after_harvest = 7)
+weather17_vars_1to14dah <- create_weather_vars(days_after_harvest = 14)
+weather17_vars_1to21dah <- create_weather_vars(days_after_harvest = 21)
+weather17_vars_1to30dah <- create_weather_vars(days_after_harvest = 30)
 
+# all weather variables in one data frame
+weather17_vars <- inner_join(weather17_vars_1to7dah, weather17_vars_1to14dah) %>% 
+	
+	inner_join(weather17_vars_1to21dah) %>% 
+	inner_join(weather17_vars_1to30dah)
+
+```
+
+And, finally join disease incidence data from each facility, grower, and harvest with weather variables to caclulate correlation coefficients.  
+
+```{r join-disease-weather}
+int_nec <- inner_join(necrosis17_wide, 
+											weather17_vars, 
+											by = c("Facility", "Grower", "Harvest"))
+
+saveRDS(int_nec, here("data/tidy", "int_nec.Rds"))
 ```
