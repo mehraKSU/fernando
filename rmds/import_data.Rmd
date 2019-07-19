@@ -98,23 +98,6 @@ weather <- bind_rows(weather16, weather17)
 Import pre-harvest weather data based on grower field locations.  
 
 ```{r pre-harvest-weather}
-# use `nasapower`
-get_preharvest_weather <- function(lon, lat, harvest_date){
-	get_power(community = 'AG',
-						lonlat = c(lon, lat),
-						pars = c("RH2M", "T2M", "PRECTOT"),
-						dates = c(ymd(harvest_date) - 29, ymd(harvest_date)),
-						temporal_average = "daily")
-}
-
-# 2016 preharvest weather
-facilityU_2016_h1 <- get_preharvest_weather(-78.33, 35.38, "2016-10-17")
-facilityV_2016_h1 <- get_preharvest_weather(-78.28, 35.02, "2016-10-17")
-facilityW_2016_h1 <- get_preharvest_weather(-77.97, 35.35, "2016-10-17")
-facilityX_2016_h1 <- facilityV_2016_h1
-facilityY_2016_h1 <- get_preharvest_weather(-77.57, 35.30, "2016-10-17")
-facilityZ_2016_h1 <- facilityV_2016_h1
-
 # use  `GSODR` package  
 install.packages("GSODR")
 library(GSODR) 
