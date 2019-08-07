@@ -26,12 +26,10 @@ pacman::p_load(tidyverse,
 							 caret,
 							 MASS,
 							 nasapower, # for preharvest weather data
-							 weatherData,
-							 lubridate # to handle dates and times
+							 lubridate, # to handle dates and times
+							 GSODR
 							 )
 
-pacman::p_load_gh("Ram-N/weatherData")
-library(weatherData)
 ```
 
 Import `SRS 2017 FOR SAS.ods` since this has daily averages of weather data instead of every 30 minutes in `SRS 2017 FOR R.ods`.
@@ -41,7 +39,7 @@ Import `SRS 2017 FOR SAS.ods` since this has daily averages of weather data inst
 # import necrosis data ----
 
 # 2017
-necrosis17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods")) %>% 
+necrosis17 <- read_ods(here::here("data/raw", "SRS 2017 FOR SAS.ods")) %>% 
 	
 	gather(key = "Root", value = "necrosis_level", `Root 1`:`Root 30`) %>% 
 	
@@ -71,20 +69,30 @@ necrosis17_wide <- necrosis17 %>%
 				 
 				 Year = 2017)
 
+# import 2016 necrosis data  
+necrosis16 <- read_ods(here::here("data/raw", "SRS 2016 all facilities 30 days avg 1.ods"), sheet = 3) %>% 
+	gather(key = Facility, value = mean_in, U:Z) %>% 
+	mutate(Year = 2016,
+				 Harvest = 1)
+
+necrosis <- bind_rows(necrosis16, necrosis17_wide) %>% 
+	dplyr::select(-c(cut1_in:mean_in2to4))
+
 # import weather data	----
 
 # 2016
-weather16 <- read_ods(here("data/raw", "SRS 2016 all facilities 30 days avg.ods")) %>% 
+weather16 <- read_ods(here::here("data/raw", "SRS 2016 all facilities 30 days avg.ods")) %>% 
 	
 	fill(Facility, Grower) %>% 
 	
 	na.omit() %>% 
 	
 	mutate(Date = lubridate::mdy(Date),
-				 Year = 2016)
+				 Year = 2016,
+				 Harvest = 1)
 
 # 2017
-weather17 <- read_ods(here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>% 
+weather17 <- read_ods(here::here("data/raw", "SRS 2017 FOR SAS.ods"), sheet = 2) %>% 
 	
 	na.omit() %>% 
 	
@@ -99,30 +107,112 @@ Import pre-harvest weather data based on grower field locations.
 
 ```{r pre-harvest-weather}
 # use  `GSODR` package  
-install.packages("GSODR")
-library(GSODR) 
 
-get_weather <- function(lat, lon, harvest_date, i, facility) {
+# function to get one month preharvest weather from the nearest weather station
+get_weather <- function(lat, lon, harvest_date, ith_station, grower, harvest) {
 	get_GSOD(years = year({{harvest_date}}), station = nearest_stations(LAT = {{lat}},
   																																	LON = {{lon}},
-  																																	distance = 50)[i]) %>% 
+  																																	distance = 50)[ith_station]) %>% 
   dplyr::select(LAT, LON, YEARMODA, TEMP, MAX, MIN, PRCP, RH) %>% 
   filter(between(ymd(YEARMODA),ymd({{harvest_date}}) - 29, ymd({{harvest_date}}))) %>% 
-		mutate(Facility = {{facility}})
+		mutate(Grower = {{grower}},
+					 Harvest = {{harvest}})
 }
 
 # 2016 preharvest weather
-u_16_h1 <- get_weather(35.38, -78.33, "2016-10-17", 3, "U")
-v_16_h1 <- get_weather(35.02, -78.28, "2016-10-17", 3, "V")
-w_16_h1 <- get_weather(35.35, -77.97, "2016-10-17", 1, "W")
-x_16_h1 <- get_weather(35.02, -78.28, "2016-10-17", 3, "X")
-y_16_h1 <- get_weather(35.30, -77.57, "2016-10-17", 4, "Y")
-z_16_h1 <- get_weather(35.02, -78.28, "2016-10-17", 3, "Z")
+u_16_h1 <- get_weather(35.298, -78.617, "2016-10-17", 2, "U", 1) # a
+v_16_h1 <- get_weather(35.214, -78.435, "2016-10-17", 2, "V", 1) # a
+w_16_h1 <- get_weather(35.480, -78.469, "2016-10-17", 1, "W", 1) # b
+x_16_h1 <- get_weather(35.118, -78.147, "2016-10-17", 1, "X", 1) # a
+y_16_h1 <- get_weather(35.374, -77.542, "2016-10-17", 2, "Y", 1) # c
+z_16_h1 <- get_weather(35.227, -78.321, "2016-10-17", 1, "Z", 1) # a
 
 pre_weather_16 <- bind_rows(u_16_h1, v_16_h1, w_16_h1,
 														x_16_h1, y_16_h1, z_16_h1)
 # 2017 preharvest weather
-u_17_h1 <- get_weather(35.35, -77.97, "2017-09-14", 1, "U")
+u_17_h1 <- get_weather(35.419, -78.176, "2017-09-14", 1, "U", 1) # A
+u_17_h2 <- get_weather(35.419, -78.176, "2017-10-04", 1, "U", 2)
+u_17_h3 <- get_weather(35.419, -78.176, "2017-10-22", 1, "U", 3)
+
+v_17_h1 <- get_weather(35.214, -78.435, "2017-09-14", 2, "V", 1) # B
+v_17_h2 <- get_weather(35.214, -78.435, "2017-10-04", 2, "V", 2)
+v_17_h3 <- get_weather(35.214, -78.435, "2017-10-22", 2, "V", 3)
+
+w_17_h1 <- get_weather(35.480, -78.469, "2017-09-14", 1, "W", 1) # A
+w_17_h2 <- get_weather(35.480, -78.469, "2017-09-14", 1, "W", 2)
+w_17_h3 <- get_weather(35.480, -78.469, "2017-09-14", 1, "W", 3)
+
+x_17_h1 <- get_weather(35.118, -78.147, "2017-09-14", 1, "X", 1) # B
+x_17_h2 <- get_weather(35.118, -78.147, "2017-09-14", 1, "X", 2)
+x_17_h3 <- get_weather(35.118, -78.147, "2017-09-14", 1, "X", 3)
+
+y_17_h1 <- get_weather(35.374, -77.542, "2017-09-14", 2, "Y", 1) # C
+y_17_h2 <- get_weather(35.374, -77.542, "2017-10-04", 2, "Y", 2)
+y_17_h3 <- get_weather(35.374, -77.542, "2017-10-22", 2, "Y", 3)
+
+z_17_h1 <- get_weather(35.227, -78.321, "2017-09-14", 1, "Z", 1) # B
+z_17_h2 <- get_weather(35.227, -78.321, "2017-09-14", 1, "Z", 2)
+z_17_h3 <- get_weather(35.227, -78.321, "2017-09-14", 1, "Z", 3)
+
+pre_weather_17 <- bind_rows(u_17_h1, u_17_h2, u_17_h3,
+														v_17_h1, v_17_h2, v_17_h3,
+														w_17_h1, w_17_h2, w_17_h3,
+														x_17_h1, x_17_h2, x_17_h3,
+														y_17_h1, y_17_h2, y_17_h3,
+														z_17_h1, z_17_h2, z_17_h3)
+
+# combined weather
+pre_weather <- bind_rows(pre_weather_16, pre_weather_17) %>% 
+	mutate(Year = year(YEARMODA))
+
+```
+
+Create weather variables from pre-harvest weather data.  
+
+```{r pre-weather-vars}
+# create a function to create a pre-harvest weather variables  
+create_pre_weather_vars <- function(days_before_harvest = 7){
+pre_weather %>% 
+	group_by(Year, Grower, Harvest) %>% 
+	filter(YEARMODA > YEARMODA[length(YEARMODA)] - {{days_before_harvest}}) %>% 
+	summarise(!!paste0("duration_", {{days_before_harvest}}, "_pre") := n(),
+						!!paste0("temp_avg_", {{days_before_harvest}}, "_pre") := mean(TEMP, na.rm = T),
+						!!paste0("max_temp_avg_", {{days_before_harvest}}, "_pre") := mean(MAX, na.rm = T),
+						!!paste0("min_temp_avg_", {{days_before_harvest}}, "_pre") := mean(MIN, na.rm = T),
+						!!paste0("prcp_days_", {{days_before_harvest}}, "_pre") := sum(PRCP > 0, na.rm = T),
+						!!paste0("prcp_sum_", {{days_before_harvest}}, "_pre") := sum(PRCP, na.rm = T),
+						!!paste0("RH_avg_", {{days_before_harvest}}, "_pre") := mean(RH, na.rm = T),
+						
+						!!paste0("daysTA60_", {{days_before_harvest}}, "_pre") := sum(MIN >= 60), # TA = Temperature Above
+						!!paste0("daysTA65_", {{days_before_harvest}}, "_pre") := sum(MIN >= 65),
+						!!paste0("daysTA70_", {{days_before_harvest}}, "_pre") := sum(MIN >= 70),
+						!!paste0("daysTA75_", {{days_before_harvest}}, "_pre") := sum(MIN >= 75),
+						!!paste0("daysTA80_", {{days_before_harvest}}, "_pre") := sum(MIN >= 80),
+						!!paste0("daysTA85_", {{days_before_harvest}}, "_pre") := sum(MIN >= 85),
+						
+						!!paste0("daysTB60_", {{days_before_harvest}}, "_pre") := sum(MAX < 60), # TB = Temperature Below
+						
+						!!paste0("daysRHB60_", {{days_before_harvest}}, "_pre") := sum(RH < 60), # RHB = Relative Humidity Below
+						!!paste0("daysRHB65_", {{days_before_harvest}}, "_pre") := sum(RH < 65),
+						!!paste0("daysRHB70_", {{days_before_harvest}}, "_pre") := sum(RH < 70),
+						!!paste0("daysRHB75_", {{days_before_harvest}}, "_pre") := sum(RH < 75),
+						!!paste0("daysRHB80_", {{days_before_harvest}}, "_pre") := sum(RH < 80),
+						!!paste0("daysRHB85_", {{days_before_harvest}}, "_pre") := sum(RH < 85),
+						!!paste0("daysRHB90_", {{days_before_harvest}}, "_pre") := sum(RH < 90),
+						!!paste0("daysRHB95_", {{days_before_harvest}}, "_pre") := sum(RH < 95)
+	) %>% 
+	ungroup()
+}	
+
+pre_weather_7dbh <- create_pre_weather_vars(days_before_harvest = 7) #dbh in the data frame name stands for days                                                                          before harvest
+pre_weather_14dbh <- create_pre_weather_vars(days_before_harvest = 14)
+pre_weather_21dbh <- create_pre_weather_vars(days_before_harvest = 21)
+pre_weather_30dbh <- create_pre_weather_vars(days_before_harvest = 30)
+
+# all weather vars in one data.frame  
+pre_weather <-  inner_join(pre_weather_7dbh, pre_weather_14dbh) %>% 
+	inner_join(pre_weather_21dbh) %>% 
+	inner_join(pre_weather_30dbh)
 
 ```
 
@@ -132,9 +222,9 @@ Make new weather variables for different time windows. These time windows are 1 
 # make new weather variables
 create_weather_vars <- function(days_after_harvest = 7){
 
-	weather17 %>% 
+	weather %>% 
 
-	group_by(Facility, Grower, Harvest) %>% 
+	group_by(Year, Facility, Grower, Harvest) %>% 
 	
 	filter(Date < Date[1] + {{days_after_harvest}}) %>%
 	
@@ -168,25 +258,30 @@ create_weather_vars <- function(days_after_harvest = 7){
 		ungroup()
 }
 
-weather17_vars_1to7dah <- create_weather_vars(days_after_harvest = 7)
-weather17_vars_1to14dah <- create_weather_vars(days_after_harvest = 14)
-weather17_vars_1to21dah <- create_weather_vars(days_after_harvest = 21)
-weather17_vars_1to30dah <- create_weather_vars(days_after_harvest = 30)
+weather_vars_1to7dah <- create_weather_vars(days_after_harvest = 7)
+weather_vars_1to14dah <- create_weather_vars(days_after_harvest = 14)
+weather_vars_1to21dah <- create_weather_vars(days_after_harvest = 21)
+weather_vars_1to30dah <- create_weather_vars(days_after_harvest = 30)
 
 # all weather variables in one data frame
-weather17_vars <- inner_join(weather17_vars_1to7dah, weather17_vars_1to14dah) %>% 
+weather_vars <- inner_join(weather_vars_1to7dah, weather_vars_1to14dah) %>% 
 	
-	inner_join(weather17_vars_1to21dah) %>% 
-	inner_join(weather17_vars_1to30dah)
+	inner_join(weather_vars_1to21dah) %>% 
+	inner_join(weather_vars_1to30dah)
 
 ```
 
+Combine pre and post harvest weather data  
+
+```{r join-pre-post-weather}
+weather_all <- inner_join(weather_vars, pre_weather)
+```
 And, finally join disease incidence data from each facility, grower, and harvest with weather variables to caclulate correlation coefficients.  
 
 ```{r join-disease-weather}
-int_nec <- inner_join(necrosis17_wide,
-											weather17_vars, 
-											by = c("Facility", "Grower", "Harvest"))
+int_nec <- inner_join(necrosis,
+											weather_all, 
+											by = c("Year", "Facility", "Grower", "Harvest"))
 
-saveRDS(int_nec, here("data/tidy", "int_nec.Rds"))
+saveRDS(int_nec, here::here("data/tidy", "int_nec_new.Rds"))
 ```

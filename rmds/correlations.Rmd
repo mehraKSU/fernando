@@ -1,5 +1,5 @@
 ---
-title: "Correlations between weather variabless and internal necrosis"
+title: "Correlations between weather variables and internal necrosis"
 author: "Lucky Mehra"
 date: "7/9/2019"
 output: html_document
@@ -9,57 +9,148 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r package-install, eval=FALSE}
-source(here::here("src", "install_packages.R"))
+```{r package-install}
+if (!require(pacman)){
+	install.packages("pacman")
+}
 
+# packages needed for this project
+pacman::p_load(tidyverse,
+							 readxl, 
+							 openxlsx,
+							 readODS,
+							 here,
+							 rlang,
+							 glue,
+							 Hmisc,
+							 caret,
+							 MASS)
 ```
 
 Calculate correlation coefficients between cut1 incidence and all weather variables.  
 
 ```{r correlation-coeff}
-int_nec <- readRDS(here("data/tidy", "int_nec.Rds"))
+int_nec <- readRDS(here::here("data/tidy", "int_nec_new.Rds"))
 
 # delete unwanted variables
 int_nec <- int_nec %>% 
+	
 	ungroup() %>% 
-	select(-c(Facility:Harvest, cut2_in:cut4_in, starts_with("duration")))
+	
+	dplyr::select(-c(Grower, Facility, Harvest, Stack,Year, starts_with("duration")))
 
 # calculate correlation and p-values
 corr_cut1 <- rcorr(as.matrix(int_nec), type = "pearson")
 
 corr_cut1_r <- as.data.frame(corr_cut1$r) %>% 
 	
-	select(cut1_in, mean_in, mean_in2to4)%>% 
+	dplyr::select(mean_in) %>% 
 	
-	rename(cut1_in_r = cut1_in,
-				 mean_in_r = mean_in,
-				 mean_in2to4_r = mean_in2to4) %>% 
+	rename(mean_in_r = mean_in) %>% 
 	
 	rownames_to_column(var = "weather_var")
 
 corr_cut1_rP <- as.data.frame(corr_cut1$P) %>%
 	
-	select(cut1_in, mean_in, mean_in2to4)%>% 
+	dplyr::select(mean_in)%>% 
 	
-	rename(cut1_in_P = cut1_in,
-				 mean_in_P = mean_in,
-				 mean_in2to4_P = mean_in2to4) %>%  
+	rename(mean_in_P = mean_in) %>%  
 	
 	rownames_to_column(var = "weather_var") %>% 
 	
 	inner_join(corr_cut1_r) %>% 
 	
-	filter(!weather_var %in% c("cut1_in", "mean_in", "mean_in2to4"))
+	filter(!weather_var %in% c("mean_in"))
+```
+
+
+### Mean incidence of 4 cuts  
+
+```{r significant-corr-mean4cuts}
+sig_weather_vars_mean4cuts <- corr_cut1_rP %>%
+
+	filter(mean_in_P <= 0.05 & abs(mean_in_r) >= 0.3) %>%
+
+	arrange(desc(mean_in_r))
+
+sig_weather_vars_mean4cuts
+
+# ggplot(data = int_nec) +
+# 	geom_jitter(mapping = aes(x = prcp_sum_30_pre, y = mean_in))
+# 
+# ggplot(data = int_nec) +
+# 	geom_jitter(mapping = aes(x = daysTA85_30, y = mean_in)) +
+# 	geom_smooth(mapping = aes(x = daysTA85_30, y = mean_in), method = "lm")
+
+```
+
+
+It looks like days with temperature above 75 (daysTA75_21) in first 21 days after harvest and minimum temperature average for first 21 days (min_temp_avg_21) are one of the most correlated variables.  
+
+Let's fit a linear model and remove collinear variables from the data.  
+
+```{r regression-model}
+int_nec_1 <- int_nec %>% 
+	
+	dplyr::select(mean_in, sig_weather_vars_mean4cuts$weather_var) %>% 
+	
+	mutate(mean_in_logit = log((mean_in+0.01)/(1 - (mean_in+0.01)))) %>% 
+	
+	dplyr::select(-mean_in, -mean_in_logit)
+
+pacman::p_load(corrplot)
+
+corrplot(cor(int_nec_1))
+
+coll_var_to_drop <- findCorrelation(cor(int_nec_1), cutoff = 0.85)
+
+sel_vars <- colnames(int_nec_1[, -coll_var_to_drop])
+
+
+# try varclus() from package `Hmisc`
+v <- varclus(as.matrix(int_nec_1))
+plot(v)
+```
+
+Based on variable clustering procedure (tree shown above), we can exclude collinear variables. From a cluster of variables that are highly collinear we will pick only one variables which encompasses information from other variables as well. So here they are:  
+"min_RH_avg_14", "daysTA75_21", "daysTA80_21", "avg_temp_21", "daysTA70_21", "min_temp_avg_21"
+
+```{r regression-model-1}
+selected_weather_vars_1 <- c("min_RH_avg_14", "daysTA75_21", "daysTA75_30", "daysTA80_21", "avg_temp_21", "daysTA70_21", "min_temp_avg_21")
+
+int_nec_2 <- int_nec %>% 
+	
+	dplyr::select(mean_in, sel_vars) %>% 
+	
+	mutate(mean_in_logit = log((mean_in+0.01)/(1 - (mean_in+0.01))))
+	
+# apply stepwise variable selection
+res.lm <- lm(mean_in ~ ., data = dplyr::select(int_nec_2, -mean_in_logit))
+step <- stepAIC(res.lm, direction = "both", trace = FALSE)
+step
+
+# fit a final model using the variables in above step
+final_model <- lm(as.formula(step$call$formula), data = int_nec_2)
+summary(final_model)
+plot(final_model)
+
+# calculate variance inflation factor
+car::vif(final_model)
+
+
+ggplot(data = int_nec) +
+ geom_point(mapping = aes(x = daysTA85_7, y = mean_in))
+
 ```
 
 ### Incidence at cut 1  
 
-Select weather variables where absolute value of correlation coefficient is greater or equal to 0.3 and P-value for the correlation is <= 0.05.
+Select weather variables where absolute value of correlation coefficient is greater or equal to 0.2 and P-value for the correlation is <= 0.05.
 
 ```{r significant-corr-cut1}
 sig_weather_vars_cut1 <- corr_cut1_rP %>% 
 	
-	select(weather_var, cut1_in_P, cut1_in_r) %>% 
+	dplyr::select(weather_var, cut1_in_P, cut1_in_r) %>% 
 	
 	filter(cut1_in_P <= 0.05 & abs(cut1_in_r) >= 0.2) %>% 
 	
@@ -67,46 +158,42 @@ sig_weather_vars_cut1 <- corr_cut1_rP %>%
 
 sig_weather_vars_cut1$weather_var -> selected_weather_vars
 
-# correlation matrix of potential predictors
-corr_mat <- as.data.frame(corr_cut1$r) %>% 
-	
-	rownames_to_column(var = "weather_var") %>% 
-	
-	select(weather_var, selected_weather_vars) %>% 
-	
-	filter(weather_var %in% selected_weather_vars)
+# # correlation matrix of potential predictors
+# corr_mat <- as.data.frame(corr_cut1$r) %>% 
+# 	
+# 	rownames_to_column(var = "weather_var") %>% 
+# 	
+# 	select(weather_var, selected_weather_vars) %>% 
+# 	
+# 	filter(weather_var %in% selected_weather_vars) 
+# 	
+# 	
+# 
+# corr_var <- corr_mat %>% 
+# 	
+# 	select(-weather_var) %>% 
+# 	
+# 	findCorrelation(cutoff = .6, exact = FALSE, names = TRUE)	
+# 
+# # correlation matrix with non-collinear variables
+# corr_mat_1 <- corr_mat %>% 
+# 	
+# 	select(-corr_var) %>% 
+# 	
+# 	filter(!weather_var %in% corr_var)
 
-findCorrelation(corr_mat, cutoff = .6, exact = FALSE)	
-```
-
-It looks like days with temperature above 75 (daysTA75_21) in first 21 days after harvest and minimum temperature average for first 21 days (min_temp_avg_21) are one of the most correlated variables.  
-
-### Mean incidence of 4 cuts  
-
-```{r significant-corr-mean2to4cuts}
-sig_weather_vars_mean4cuts <- corr_cut1_rP %>% 
-	
-	select(weather_var, mean_in_P, mean_in_r) %>% 
-	
-	filter(mean_in_P <= 0.05 & abs(mean_in_r) >= 0.2) %>% 
-
-	arrange(desc(mean_in_r))
-
-sig_weather_vars_mean4cuts
-
-	
 ```
 
 ### Mean incidence of cut 2 to 4  
 
 ```{r significant-corr-mean2to4cuts}
-sig_weather_vars_mean2to4cuts <- corr_cut1_rP %>% 
-	
-	select(weather_var, mean_in2to4_P, mean_in2to4_r) %>% 
-	
-	filter(mean_in2to4_P <= 0.05 & abs(mean_in2to4_r) >= 0.2) %>% 
-	
-	arrange(desc(mean_in2to4_r))
-
-sig_weather_vars_mean2to4cuts
+# sig_weather_vars_mean2to4cuts <- corr_cut1_rP %>% 
+# 	
+# 	select(weather_var, mean_in2to4_P, mean_in2to4_r) %>% 
+# 	
+# 	filter(mean_in2to4_P <= 0.05 & abs(mean_in2to4_r) >= 0.2) %>% 
+# 	
+# 	arrange(desc(mean_in2to4_r))
+# 
+# sig_weather_vars_mean2to4cuts
 ```
